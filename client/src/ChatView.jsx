@@ -1,10 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { api, fileUrl } from './api.js';
 import { Avatar, formatTime, formatBytes } from './components.jsx';
 
-export default function ChatView({ chat, me, messages, onSend, onTyping, typingUsers, online }) {
+export default function ChatView({ chat, me, messages, onSend, onFile, onTyping, typingUsers, online, uploading }) {
   const [text, setText] = useState('');
-  const [uploading, setUploading] = useState(false);
   const scrollRef = useRef(null);
   const fileRef = useRef(null);
   const bottomRef = useRef(null);
@@ -28,19 +26,10 @@ export default function ChatView({ chat, me, messages, onSend, onTyping, typingU
     setText('');
   }
 
-  async function pickFile(e) {
+  function pickFile(e) {
     const file = e.target.files?.[0];
     e.target.value = '';
-    if (!file) return;
-    setUploading(true);
-    try {
-      const attachment = await api.upload(file);
-      onSend({ body: '', attachId: attachment.id, attachment });
-    } catch (err) {
-      alert(err.message);
-    } finally {
-      setUploading(false);
-    }
+    if (file) onFile(file);
   }
 
   const subtitle = chat.type === 'group'
@@ -107,13 +96,13 @@ function MessageBubble({ m, mine, showName }) {
 function Attachment({ a }) {
   if (a.isImage) {
     return (
-      <a href={fileUrl(a.url)} target="_blank" rel="noreferrer" className="attach-image">
-        <img src={fileUrl(a.url)} alt={a.name} />
+      <a href={a.url} target="_blank" rel="noreferrer" className="attach-image">
+        <img src={a.url} alt={a.name} />
       </a>
     );
   }
   return (
-    <a href={fileUrl(a.url)} target="_blank" rel="noreferrer" download={a.name} className="attach-file">
+    <a href={a.url} target="_blank" rel="noreferrer" download={a.name} className="attach-file">
       <span className="attach-icon">📄</span>
       <span className="attach-meta">
         <span className="attach-name">{a.name}</span>

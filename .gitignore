@@ -1,9 +1,7 @@
 node_modules/
-server/data/app.db
-server/data/app.db-wal
-server/data/app.db-shm
-server/data/uploads/*
-!server/data/uploads/.gitkeep
 client/dist/
+client/.env
+.env
+.env.local
 .DS_Store
 *.log

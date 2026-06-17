@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { api } from './api.js';
 
 export function Avatar({ name, color, size = 48, online }) {
   const initials = (name || '?')
@@ -30,7 +29,7 @@ export function formatBytes(n) {
 }
 
 // Yangi suhbat / guruh yaratish modali
-export function NewChatModal({ onClose, onOpenPrivate, onCreateGroup }) {
+export function NewChatModal({ onClose, onOpenPrivate, onCreateGroup, searchUsers }) {
   const [tab, setTab] = useState('private');
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
@@ -40,7 +39,7 @@ export function NewChatModal({ onClose, onOpenPrivate, onCreateGroup }) {
   useEffect(() => {
     const t = setTimeout(async () => {
       if (query.trim().length < 1) { setResults([]); return; }
-      try { setResults((await api.searchUsers(query)).users); } catch {}
+      try { setResults(await searchUsers(query)); } catch {}
     }, 250);
     return () => clearTimeout(t);
   }, [query]);

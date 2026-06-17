@@ -1,5 +1,13 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { api, setToken, getToken, connectSocket } from './api.js';
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  onAuth, logout, startPresence,
+  subscribeChats, subscribeMessages, subscribeTyping,
+  sendMessage as sendMsg, setTyping, uploadFile,
+  openPrivateChat, createGroup as createGroupFb,
+  searchUsers, isUserOnline, subscribeUser,
+} from './chatStore.js';
+import { db } from './firebase.js';
+import { doc, onSnapshot } from 'firebase/firestore';
 import Auth from './Auth.jsx';
 import ChatView from './ChatView.jsx';
 import { Avatar, formatTime, NewChatModal } from './components.jsx';
@@ -10,137 +18,101 @@ export default function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!getToken()) { setLoading(false); return; }
-    api.me().then((d) => setUser(d.user)).catch(() => setToken(null)).finally(() => setLoading(false));
+    const unsub = onAuth((u) => { setUser(u); setLoading(false); });
+    return unsub;
   }, []);
 
-  if (loading) return <div className="splash">Yuklanmoqda...</div>;
-  if (!user) return <Auth onAuth={setUser} />;
-  return <Messenger user={user} onLogout={() => { setToken(null); setUser(null); }} />;
+  if (loading) return <div className="splash"><Logo size={72} /><p>Yuklanmoqda...</p></div>;
+  if (!user) return <Auth />;
+  return <Messenger user={user} onLogout={logout} />;
 }
 
 function Messenger({ user, onLogout }) {
   const [chats, setChats] = useState([]);
   const [activeId, setActiveId] = useState(null);
-  const [messagesByChat, setMessagesByChat] = useState({});
-  const [onlineUsers, setOnlineUsers] = useState(new Set());
-  const [typing, setTyping] = useState({}); // chatId -> {userId: name}
-  const [wsStatus, setWsStatus] = useState('offline');
+  const [messages, setMessages] = useState([]);
+  const [typing, setTypingState] = useState({});
+  const [onlineMap, setOnlineMap] = useState({}); // uid -> bool
   const [showNew, setShowNew] = useState(false);
   const [search, setSearch] = useState('');
-
-  const sockRef = useRef(null);
-  const activeIdRef = useRef(null);
-  const typingTimers = useRef({});
-  activeIdRef.current = activeId;
+  const [uploading, setUploading] = useState(false);
 
   const active = chats.find((c) => c.id === activeId) || null;
 
-  // Dastlabki yuklash
-  useEffect(() => {
-    api.chats().then((d) => setChats(d.chats)).catch(() => {});
-  }, []);
+  // Presence — o'zimizni "online" ushlab turamiz
+  useEffect(() => startPresence(user.id), [user.id]);
 
-  // WebSocket hodisalari
-  const handleEvent = useCallback((type, payload) => {
-    if (type === 'message') {
-      const msg = payload;
-      setMessagesByChat((prev) => {
-        const list = prev[msg.chatId] ? [...prev[msg.chatId]] : [];
-        // tempId bo'yicha optimistik xabarni almashtirish
-        const idx = msg.tempId ? list.findIndex((m) => m.tempId === msg.tempId) : -1;
-        if (idx >= 0) list[idx] = msg;
-        else if (!list.find((m) => m.id === msg.id)) list.push(msg);
-        return { ...prev, [msg.chatId]: list };
-      });
-      // Chat ro'yxatida oxirgi xabar va tartibni yangilash
-      setChats((prev) => {
-        let found = false;
-        const next = prev.map((c) => {
-          if (c.id === msg.chatId) { found = true; return { ...c, lastMessage: msg }; }
-          return c;
-        });
-        if (!found) { api.chats().then((d) => setChats(d.chats)); return prev; }
-        next.sort((a, b) => (b.lastMessage?.createdAt || b.createdAt) - (a.lastMessage?.createdAt || a.createdAt));
-        return next;
-      });
-    } else if (type === 'chat_created') {
-      setChats((prev) => prev.find((c) => c.id === payload.chat.id) ? prev : [payload.chat, ...prev]);
-    } else if (type === 'presence') {
-      setOnlineUsers((prev) => {
-        const next = new Set(prev);
-        if (payload.online) next.add(payload.userId); else next.delete(payload.userId);
-        return next;
-      });
-    } else if (type === 'typing') {
-      const { chatId, userId, name } = payload;
-      setTyping((prev) => ({ ...prev, [chatId]: { ...(prev[chatId] || {}), [userId]: name } }));
-      const key = `${chatId}:${userId}`;
-      clearTimeout(typingTimers.current[key]);
-      typingTimers.current[key] = setTimeout(() => {
-        setTyping((prev) => {
-          const c = { ...(prev[chatId] || {}) };
-          delete c[userId];
-          return { ...prev, [chatId]: c };
-        });
-      }, 3000);
-    }
-  }, []);
+  // Chatlar ro'yxati (realtime)
+  useEffect(() => subscribeChats(user.id, setChats), [user.id]);
 
+  // Faol chat xabarlari (realtime)
   useEffect(() => {
-    sockRef.current = connectSocket(handleEvent, setWsStatus);
-    return () => sockRef.current?.close();
-  }, [handleEvent]);
-
-  // Faol chat ochilganda tarixni yuklash
-  useEffect(() => {
-    if (activeId == null || messagesByChat[activeId]) return;
-    api.messages(activeId).then((d) =>
-      setMessagesByChat((prev) => ({ ...prev, [activeId]: d.messages }))
-    ).catch(() => {});
+    if (!activeId) { setMessages([]); return; }
+    setMessages([]);
+    const unsub = subscribeMessages(activeId, setMessages);
+    return unsub;
   }, [activeId]);
 
-  function sendMessage({ body, attachId, attachment }) {
-    const tempId = 't' + Math.random().toString(36).slice(2);
-    const optimistic = {
-      tempId, id: null, chatId: activeId, senderId: user.id,
-      senderName: user.displayName, senderColor: user.avatarColor,
-      body, attachment: attachment || null, createdAt: Date.now(),
-    };
-    setMessagesByChat((prev) => ({
-      ...prev, [activeId]: [...(prev[activeId] || []), optimistic],
-    }));
-    sockRef.current?.send('message', { chatId: activeId, body, attachId, tempId });
+  // Faol chatda typing holatini kuzatish
+  useEffect(() => {
+    if (!activeId) return;
+    return subscribeTyping(activeId, user.id, (t) => setTypingState(t));
+  }, [activeId, user.id]);
+
+  // Suhbatdoshlarning online holatini kuzatish
+  const peerIds = chats.filter((c) => c.peer).map((c) => c.peer.id).join(',');
+  useEffect(() => {
+    const ids = peerIds ? peerIds.split(',') : [];
+    const unsubs = ids.map((uid) =>
+      subscribeUser(uid, (data) => {
+        setOnlineMap((prev) => ({ ...prev, [uid]: isUserOnline(data) }));
+      })
+    );
+    return () => unsubs.forEach((u) => u && u());
+  }, [peerIds]);
+
+  async function handleSend({ body }) {
+    if (!activeId) return;
+    await sendMsg(activeId, user, { body });
   }
 
-  const lastTypingSent = useRef(0);
+  async function handleFile(file) {
+    if (!activeId || !file) return;
+    setUploading(true);
+    try {
+      const attachment = await uploadFile(file, user.id);
+      await sendMsg(activeId, user, { body: '', attachment });
+    } catch (err) {
+      alert('Yuklashda xato: ' + (err.message || err));
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  const lastTyping = useRef(0);
   function notifyTyping() {
     const now = Date.now();
-    if (now - lastTypingSent.current > 2000) {
-      lastTypingSent.current = now;
-      sockRef.current?.send('typing', { chatId: activeId });
+    if (now - lastTyping.current > 2500) {
+      lastTyping.current = now;
+      if (activeId) setTyping(activeId, user);
     }
   }
 
   async function openPrivate(u) {
-    const d = await api.openPrivate(u.id);
-    setChats((prev) => prev.find((c) => c.id === d.chat.id) ? prev : [d.chat, ...prev]);
-    setActiveId(d.chat.id);
+    const chatId = await openPrivateChat(user, u);
+    setActiveId(chatId);
     setShowNew(false);
   }
 
-  async function createGroup(title, memberIds) {
-    const d = await api.createGroup(title, memberIds);
-    setChats((prev) => [d.chat, ...prev]);
-    setActiveId(d.chat.id);
+  async function createGroup(title, members) {
+    const chatId = await createGroupFb(user, title, members);
+    setActiveId(chatId);
     setShowNew(false);
   }
 
-  const isOnline = (chat) => chat.peer ? onlineUsers.has(chat.peer.id) : false;
-
+  const isOnline = (chat) => chat.peer ? !!onlineMap[chat.peer.id] : false;
   const filteredChats = chats.filter((c) =>
-    c.title.toLowerCase().includes(search.toLowerCase())
-  );
+    c.title.toLowerCase().includes(search.toLowerCase()));
 
   return (
     <div className="messenger">
@@ -154,9 +126,7 @@ function Messenger({ user, onLogout }) {
           <Avatar name={user.displayName} color={user.avatarColor} size={40} />
           <div className="sidebar-me">
             <div className="sidebar-name">{user.displayName}</div>
-            <div className={`sidebar-status ${wsStatus}`}>
-              {wsStatus === 'online' ? '● ulangan' : '○ ulanmoqda...'}
-            </div>
+            <div className="sidebar-status online">● onlayn</div>
           </div>
           <button className="icon-btn" title="Chiqish" onClick={onLogout}>⎋</button>
         </div>
@@ -186,9 +156,7 @@ function Messenger({ user, onLogout }) {
                   {c.lastMessage && <span className="chat-item-time">{formatTime(c.lastMessage.createdAt)}</span>}
                 </div>
                 <div className="chat-item-last">
-                  {typing[c.id] && Object.keys(typing[c.id]).length > 0 ? (
-                    <span className="typing">yozmoqda...</span>
-                  ) : c.lastMessage ? (
+                  {c.lastMessage ? (
                     <>
                       {c.type === 'group' && c.lastMessage.senderName ? `${c.lastMessage.senderName.split(' ')[0]}: ` : ''}
                       {c.lastMessage.attachment ? (c.lastMessage.attachment.isImage ? '🖼 Rasm' : '📄 Fayl') : c.lastMessage.body}
@@ -210,11 +178,13 @@ function Messenger({ user, onLogout }) {
           <ChatView
             chat={active}
             me={user}
-            messages={messagesByChat[active.id] || []}
-            onSend={sendMessage}
+            messages={messages}
+            onSend={handleSend}
+            onFile={handleFile}
             onTyping={notifyTyping}
-            typingUsers={typing[active.id]}
+            typingUsers={typing}
             online={isOnline(active)}
+            uploading={uploading}
           />
         ) : (
           <div className="welcome">
@@ -230,6 +200,7 @@ function Messenger({ user, onLogout }) {
           onClose={() => setShowNew(false)}
           onOpenPrivate={openPrivate}
           onCreateGroup={createGroup}
+          searchUsers={(q) => searchUsers(q, user.id)}
         />
       )}
     </div>

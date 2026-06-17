@@ -1,138 +1,91 @@
-# Telegram Clone
+# AZAMOV — Messenjer
 
-Telegramga o'xshash, real vaqtli ishlaydigan web messenjer.
-**React + Node.js + WebSocket + SQLite** asosida qurilgan.
+Real vaqtli chat ilovasi. **React + Firebase** asosida.
+Server yo'q — Firebase butun backend'ni ta'minlaydi, shuning uchun
+to'g'ridan-to'g'ri Netlify'ga joylashadi.
 
 ## Imkoniyatlar
 
-- ✅ Ro'yxatdan o'tish / kirish (parol scrypt bilan hashlanadi, HMAC token)
+- ✅ Email/parol bilan ro'yxatdan o'tish va kirish (Firebase Auth)
 - ✅ Shaxsiy suhbatlar (1:1)
 - ✅ Guruh chatlari
-- ✅ Real vaqtli xabar almashish (WebSocket)
-- ✅ Rasm va fayl yuborish (max 25 MB)
-- ✅ Onlayn holati (online/offline)
-- ✅ "Yozmoqda..." indikatori
+- ✅ Real vaqtli xabar (Firestore onSnapshot)
+- ✅ Rasm va fayl yuborish (Firebase Storage)
+- ✅ Onlayn holati va "yozmoqda..." indikatori
 - ✅ Foydalanuvchi qidirish
-- ✅ Xabarlar tarixi (SQLite'da saqlanadi)
-- ✅ Optimistik UI (xabar darhol ko'rinadi)
 
 ## Texnologiyalar
 
-| Qatlam   | Texnologiya |
-|----------|-------------|
-| Frontend | React 18, Vite |
-| Backend  | Node.js (http + ws) |
-| Baza     | node:sqlite (Node 24+ ichida, tashqi server kerak emas) |
-| Auth     | scrypt (parol) + HMAC-SHA256 (token) |
+| Qatlam     | Texnologiya |
+|------------|-------------|
+| Frontend   | React 18, Vite |
+| Auth       | Firebase Authentication |
+| Ma'lumotlar| Cloud Firestore (realtime) |
+| Fayllar    | Firebase Storage |
+| Hosting    | Netlify |
 
-Tashqi baza yoki og'ir kutubxonalar yo'q — faqat `ws` va `react`/`vite`.
+## Firebase sozlash (bir martalik)
 
-## Talablar
+1. [console.firebase.google.com](https://console.firebase.google.com) da loyiha yarating.
+2. **Authentication → Sign-in method → Email/Password** ni yoqing.
+3. **Firestore Database** yarating (production mode).
+4. **Storage** ni yoqing.
+5. **Project settings → Web app** dan config'ni oling.
+6. Xavfsizlik qoidalarini joylang:
+   - Firestore → Rules → `firestore.rules` mazmunini qo'ying → Publish
+   - Storage → Rules → `storage.rules` mazmunini qo'ying → Publish
 
-- **Node.js 24+** (`node:sqlite` shu versiyadan boshlab bor)
-
-## Ishga tushirish
-
-Ikkita terminal kerak.
-
-### 1. Backend
-
-```bash
-cd server
-npm install
-npm start        # http://localhost:3001
-```
-
-### 2. Frontend
+## Lokal ishga tushirish
 
 ```bash
 cd client
 npm install
-npm run dev      # http://localhost:5173
+cp .env.example .env      # .env ni Firebase config bilan to'ldiring
+npm run dev               # http://localhost:5173
 ```
 
-Brauzerda **http://localhost:5173** ni oching.
+`.env` quyidagicha to'ldiriladi:
 
-### Sinab ko'rish
+```
+VITE_FIREBASE_API_KEY=AIza...
+VITE_FIREBASE_AUTH_DOMAIN=azamov-xxxx.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=azamov-xxxx
+VITE_FIREBASE_STORAGE_BUCKET=azamov-xxxx.appspot.com
+VITE_FIREBASE_MESSAGING_SENDER_ID=123...
+VITE_FIREBASE_APP_ID=1:123...:web:abc...
+```
 
-1. Ikki xil brauzerda (yoki biri yashirin oynada) ikkita hisob yarating, masalan `alice` va `bob`.
-2. ✎ tugmasini bosib, bir-biringizni qidiring va suhbat boshlang.
-3. Xabarlar real vaqtda yetib boradi. 📎 orqali rasm/fayl yuboring.
+## Netlify'ga joylash
+
+1. [netlify.com](https://netlify.com) → **Add new site → Import an existing project** → GitHub repo.
+2. Sozlamalar:
+   - **Base directory:** `client`
+   - **Build command:** `npm run build`
+   - **Publish directory:** `client/dist`
+3. **Environment variables** ga `.env` dagi barcha `VITE_FIREBASE_*` qiymatlarni qo'shing.
+4. **Deploy**.
+
+> Firebase Console → Authentication → Settings → **Authorized domains** ga
+> Netlify manzilingizni (`xxxx.netlify.app`) qo'shishni unutmang.
 
 ## Loyiha tuzilmasi
 
 ```
-telegram-clone/
-├── server/
-│   └── src/
-│       ├── index.js      # HTTP + WS serverni ishga tushirish
-│       ├── config.js     # Sozlamalar
-│       ├── db.js         # SQLite sxema
-│       ├── auth.js       # Parol hash + token
-│       ├── store.js      # Ma'lumotlar bilan ishlash (queries)
-│       ├── http.js       # REST API + fayl yuklash
-│       └── realtime.js   # WebSocket real-time logikasi
-└── client/
-    └── src/
-        ├── App.jsx       # Asosiy holat va layout
-        ├── Auth.jsx      # Login / register ekrani
-        ├── ChatView.jsx  # Chat oynasi va xabarlar
-        ├── components.jsx# Avatar, modal, yordamchilar
-        ├── api.js        # REST + WebSocket klient
-        └── styles.css    # Telegram uslubidagi dizayn
+client/src/
+├── firebase.js     # Firebase init (env config)
+├── chatStore.js    # Auth + Firestore + Storage mantiqi
+├── App.jsx         # Asosiy holat, realtime listenerlar
+├── Auth.jsx        # Kirish / ro'yxatdan o'tish
+├── ChatView.jsx    # Chat oynasi
+├── components.jsx  # Avatar, modal
+├── Logo.jsx        # AZAMOV logosi
+└── styles.css
 ```
 
-## API qisqacha
+## Ma'lumotlar modeli (Firestore)
 
-| Metod | Endpoint | Tavsif |
-|-------|----------|--------|
-| POST  | `/api/register` | Ro'yxatdan o'tish |
-| POST  | `/api/login` | Kirish |
-| GET   | `/api/me` | Joriy foydalanuvchi |
-| GET   | `/api/users/search?q=` | Foydalanuvchi qidirish |
-| GET   | `/api/chats` | Suhbatlar ro'yxati |
-| POST  | `/api/chats/private` | Shaxsiy chat ochish |
-| POST  | `/api/chats/group` | Guruh yaratish |
-| GET   | `/api/messages?chatId=` | Xabarlar tarixi |
-| POST  | `/api/upload` | Fayl yuklash |
-| WS    | `/ws?token=` | Real-time kanal |
-
-## Internetga joylash (Deploy)
-
-⚠️ **Muhim:** Bu ilova ikki qismdan iborat. Netlify faqat **frontend**ni
-ko'taradi (statik). **Backend** (WebSocket + SQLite) alohida joyga kerak,
-masalan **Render.com** (bepul).
-
-### 1-qadam: Backend — Render.com
-
-1. [render.com](https://render.com) ga GitHub bilan kiring.
-2. **New → Blueprint** → shu reponi tanlang (`render.yaml` avtomatik o'qiladi).
-3. Deploy tugaganda manzilni nusxa oling, masalan:
-   `https://azamov-backend.onrender.com`
-
-> Bepul rejada server 15 daqiqa harakatsizlikdan keyin "uxlaydi";
-> birinchi so'rov 30-50 soniya sekin bo'lishi mumkin.
-
-### 2-qadam: Frontend — Netlify
-
-1. [netlify.com](https://netlify.com) ga GitHub bilan kiring.
-2. **Add new site → Import an existing project** → shu repo.
-3. Sozlamalar:
-   - **Base directory:** `client`
-   - **Build command:** `npm run build`
-   - **Publish directory:** `client/dist`
-4. **Environment variables** bo'limiga qo'shing:
-   - `VITE_API_URL` = `https://azamov-backend.onrender.com` (1-qadamdagi manzil)
-5. **Deploy** ni bosing.
-
-Tayyor — Netlify bergan manzilda ilova ishlaydi.
-
-## Ishlab chiqarish uchun eslatma
-
-- `server/src/config.js` dagi `SECRET` ni o'zgartiring (yoki `SECRET` env bering).
-- Frontendni `npm run build` bilan yig'ib, statik fayllarni xizmat qiling.
-- Bu o'quv loyihasi: xabarlar shifrlanmagan (E2E emas), rate-limiting yo'q.
-
-## Litsenziya
-
-Erkin foydalaning — o'quv maqsadida yaratilgan.
+```
+users/{uid}                  # profil: username, displayName, avatarColor, lastActive
+chats/{chatId}               # type, members[], memberInfo, lastMessage, typing
+chats/{chatId}/messages/{id} # senderId, body, attachment, createdAt
+```

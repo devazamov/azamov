@@ -1,11 +1,8 @@
-# Netlify konfiguratsiyasi (faqat frontend)
-# Bu fayl client/ papkasida bo'lgani uchun base shu yerda
-
 [build]
   command = "npm run build"
   publish = "dist"
 
-# SPA — barcha yo'llarni index.html ga yo'naltirish
+# SPA — barcha yo'llar index.html ga
 [[redirects]]
   from = "/*"
   to = "/index.html"
